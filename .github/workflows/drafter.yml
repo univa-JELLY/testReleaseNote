@@ -66,9 +66,9 @@ jobs:
           )
 
           # cleaned_body를 output으로 내보내기
-          echo "cleaned_body<<EOF
-$CLEANED_BODY
-EOF" >> $GITHUB_OUTPUT
+          echo "cleaned_body<<EOF" >> $GITHUB_OUTPUT
+          echo "$CLEANED_BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Send to Slack
         if: success() && steps.release-drafter.outputs.id
@@ -81,19 +81,19 @@ EOF" >> $GITHUB_OUTPUT
         run: |
           # 릴리스 노트 마크다운 포맷 변환 (Slack 호환성 향상)
           SLACK_BODY=$(echo "$RELEASE_BODY" | sed 's/###/*/g' | sed 's/##/*/g' | sed 's/#/*/g')
-          
+
           # 1. 길이 제한 (2000자)
           TRIMMED_BODY=$(echo "$SLACK_BODY" | cut -c1-2000)
           if [ ${#SLACK_BODY} -gt 2000 ]; then
             TRIMMED_BODY="${TRIMMED_BODY}...\n\n(릴리스 노트가 잘렸습니다. 전체 내용은 GitHub에서 확인하세요)"
           fi
-          
+
           # 2. JSON 이스케이프 처리 (큰따옴표와 백슬래시 처리)
           ESCAPED_BODY=$(echo "$TRIMMED_BODY" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g')
-          
+
           # 디버깅 - 이스케이프된 내용 확인 (필요시 주석 해제)
           # echo "Escaped body: $ESCAPED_BODY"
-          
+
           # Slack 페이로드 생성 - JSON 직접 작성 방식으로 수정
           SLACK_PAYLOAD='{
             "text": "🎉 새 릴리스 '${RELEASE_VERSION}' 발행 ('${RELEASE_DATE}')",
@@ -135,10 +135,10 @@ EOF" >> $GITHUB_OUTPUT
               }
             ]
           }'
-          
+
           # 최종 페이로드 디버깅 (필요시 주석 해제)
           # echo "Final payload: $SLACK_PAYLOAD"
-          
+
           # 메시지 전송
           curl -X POST -H 'Content-Type: application/json' --data "$SLACK_PAYLOAD" "$SLACK_WEBHOOK_URL" || echo "Slack 전송에 실패했습니다"
               if: success() && steps.release-drafter.outputs.id
