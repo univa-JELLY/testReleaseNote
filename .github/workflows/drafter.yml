@@ -34,6 +34,7 @@ jobs:
         run: echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
 
       - name: Run Release Drafter
+        id: release-drafter
         uses: release-drafter/release-drafter@v6
         with:
           config-name: drafter-config.yaml
@@ -44,11 +45,25 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG_NAME=$(gh api repos/${{ github.repository }}/releases --jq '.[0].tag_name' || echo "")
-          if [ -z "$TAG_NAME" ]; then
-            echo "No releases found. Skipping cleanup."
+          # Release Drafter의 출력에서 릴리스 ID 직접 사용
+          RELEASE_ID=${{ steps.release-drafter.outputs.id }}
+          if [ -z "$RELEASE_ID" ]; then
+            echo "No release ID found. Skipping cleanup."
             exit 0
           fi
-          RELEASE_ID=$(gh api repos/${{ github.repository }}/releases/tags/$TAG_NAME --jq '.id')
-          BODY=$(gh api repos/${{ github.repository }}/releases/$RELEASE_ID --jq '.body' | sed 's/\[MODIFY\] //g')
-          gh api repos/${{ github.repository }}/releases/$RELEASE_ID -X PATCH -F body="$BODY"
+
+          echo "Using release ID: $RELEASE_ID"
+
+          # 릴리스 정보 가져오기 (드래프트 포함)
+          BODY=$(gh api repos/${{ github.repository }}/releases/$RELEASE_ID --jq '.body' || echo "")
+          if [ -z "$BODY" ]; then
+            echo "Could not get release body. Skipping cleanup."
+            exit 0
+          fi
+
+          # 모든 유형의 접두사 제거 ([FEAT], [MODIFY], [FIX] 등)
+          CLEANED_BODY=$(echo "$BODY" | sed 's/\[[A-Za-z0-9_-]\+\] //g')
+
+          # 수정된 내용으로 릴리스 업데이트
+          echo "Updating release notes for ID: $RELEASE_ID"
+          gh api repos/${{ github.repository }}/releases/$RELEASE_ID -X PATCH -F body="$CLEANED_BODY"
