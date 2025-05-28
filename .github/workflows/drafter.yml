@@ -1,3 +1,4 @@
+# .github/workflows/drafter.yml
 name: Draft new release
 
 on:
@@ -71,3 +72,60 @@ jobs:
           # 수정된 내용으로 릴리스 업데이트
           echo "Updating release notes for ID: $RELEASE_ID"
           gh api repos/${{ github.repository }}/releases/$RELEASE_ID -X PATCH -F body="$CLEANED_BODY"
+
+      - name: Send to Slack
+        if: success() && steps.release-drafter.outputs.id
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RELEASE_ID: ${{ steps.release-drafter.outputs.id }}
+          RELEASE_VERSION: ${{ steps.release-drafter.outputs.tag_name }}
+          RELEASE_URL: ${{ steps.release-drafter.outputs.html_url }}
+        run: |
+          # 정리된 릴리스 노트 내용 사용
+          RELEASE_BODY="${CLEANED_BODY}"
+
+          # Slack 메시지 포맷팅
+          SLACK_MESSAGE=$(cat << EOF
+          {
+            "blocks": [
+              {
+                "type": "header",
+                "text": {
+                  "type": "plain_text",
+                  "text": "🎉 새 릴리즈 발행: ${RELEASE_VERSION}"
+                }
+              },
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "*발행일:* ${RELEASE_DATE}"
+                }
+              },
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "${RELEASE_BODY}"
+                }
+              },
+              {
+                "type": "actions",
+                "elements": [
+                  {
+                    "type": "button",
+                    "text": {
+                      "type": "plain_text",
+                      "text": "GitHub에서 보기"
+                    },
+                    "url": "${RELEASE_URL}"
+                  }
+                ]
+              }
+            ]
+          }
+          EOF
+          )
+
+          # Slack에 메시지 전송
+          curl -X POST -H 'Content-type: application/json' --data "${SLACK_MESSAGE}" "${SLACK_WEBHOOK_URL}"
