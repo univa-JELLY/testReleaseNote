@@ -22,13 +22,12 @@ jobs:
           fetch-depth: 0
 
       - name: Set release date
-        run: echo "RELEASE_DATE=$(date -u +"%Y-%m-%d")" >> $GITHUB_ENV
+        run: echo "RELEASE_DATE=$(date -u +\"%Y-%m-%d\")" >> $GITHUB_ENV
 
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq
-          sudo apt-get install -y gh
+          sudo apt-get install -y jq gh
 
       - name: Authenticate gh CLI
         run: echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
@@ -42,71 +41,83 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Clean up release notes
+        id: clean-notes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_DATE: ${{ env.RELEASE_DATE }}
         run: |
-          # Release Drafter의 출력에서 릴리스 ID 직접 사용
           RELEASE_ID=${{ steps.release-drafter.outputs.id }}
           if [ -z "$RELEASE_ID" ]; then
             echo "No release ID found. Skipping cleanup."
             exit 0
           fi
 
-          echo "Using release ID: $RELEASE_ID"
-          echo "Current date: $RELEASE_DATE"
-
-          # 릴리스 정보 가져오기 (드래프트 포함)
+          # 원본 릴리스 노트 가져오기
           BODY=$(gh api repos/${{ github.repository }}/releases/$RELEASE_ID --jq '.body' || echo "")
           if [ -z "$BODY" ]; then
             echo "Could not get release body. Skipping cleanup."
             exit 0
           fi
 
-          # 모든 유형의 접두사 제거 ([FEAT], [MODIFY], [FIX] 등)
-          CLEANED_BODY=$(echo "$BODY" | sed 's/\[[A-Za-z0-9_-]\+\] //g')
+          # 접두사 제거 및 날짜 플레이스홀더 치환
+          CLEANED_BODY=$(echo "$BODY" \
+            | sed 's/\[[A-Za-z0-9_-]\+\] //g' \
+            | sed "s/RELEASE_DATE_PLACEHOLDER/$RELEASE_DATE/g"
+          )
 
-          # 날짜 플레이스홀더 대체
-          CLEANED_BODY=$(echo "$CLEANED_BODY" | sed "s/RELEASE_DATE_PLACEHOLDER/$RELEASE_DATE/g")
-
-          # 수정된 내용으로 릴리스 업데이트
-          echo "Updating release notes for ID: $RELEASE_ID"
-          gh api repos/${{ github.repository }}/releases/$RELEASE_ID -X PATCH -F body="$CLEANED_BODY"
+          # cleaned_body를 output으로 내보내기
+          echo "cleaned_body<<EOF
+$CLEANED_BODY
+EOF" >> $GITHUB_OUTPUT
 
       - name: Send to Slack
         if: success() && steps.release-drafter.outputs.id
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          RELEASE_ID: ${{ steps.release-drafter.outputs.id }}
           RELEASE_VERSION: ${{ steps.release-drafter.outputs.tag_name }}
           RELEASE_URL: ${{ steps.release-drafter.outputs.html_url }}
+          RELEASE_DATE: ${{ env.RELEASE_DATE }}
+          RELEASE_BODY: ${{ steps.clean-notes.outputs.cleaned_body }}
         run: |
-          # 정리된 릴리스 노트 내용 사용
-          RELEASE_BODY="${CLEANED_BODY}"
-
-          # Slack 메시지 포맷팅
-          SLACK_MESSAGE=$(cat << EOF
-          {
+          # 릴리스 노트 마크다운 포맷 변환 (Slack 호환성 향상)
+          SLACK_BODY=$(echo "$RELEASE_BODY" | sed 's/###/*/g' | sed 's/##/*/g' | sed 's/#/*/g')
+          
+          # 1. 길이 제한 (2000자)
+          TRIMMED_BODY=$(echo "$SLACK_BODY" | cut -c1-2000)
+          if [ ${#SLACK_BODY} -gt 2000 ]; then
+            TRIMMED_BODY="${TRIMMED_BODY}...\n\n(릴리스 노트가 잘렸습니다. 전체 내용은 GitHub에서 확인하세요)"
+          fi
+          
+          # 2. JSON 이스케이프 처리 (큰따옴표와 백슬래시 처리)
+          ESCAPED_BODY=$(echo "$TRIMMED_BODY" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g')
+          
+          # 디버깅 - 이스케이프된 내용 확인 (필요시 주석 해제)
+          # echo "Escaped body: $ESCAPED_BODY"
+          
+          # Slack 페이로드 생성 - JSON 직접 작성 방식으로 수정
+          SLACK_PAYLOAD='{
+            "text": "🎉 새 릴리스 '${RELEASE_VERSION}' 발행 ('${RELEASE_DATE}')",
             "blocks": [
               {
                 "type": "header",
                 "text": {
                   "type": "plain_text",
-                  "text": "🎉 새 릴리즈 발행: ${RELEASE_VERSION}"
+                  "text": "🎉 새 릴리스 발행: '${RELEASE_VERSION}'",
+                  "emoji": true
                 }
               },
               {
                 "type": "section",
                 "text": {
                   "type": "mrkdwn",
-                  "text": "*발행일:* ${RELEASE_DATE}"
+                  "text": "*발행일:* '${RELEASE_DATE}'"
                 }
               },
               {
-                "type": "section",
+                "type": "section", 
                 "text": {
                   "type": "mrkdwn",
-                  "text": "${RELEASE_BODY}"
+                  "text": "'${ESCAPED_BODY}'"
                 }
               },
               {
@@ -118,14 +129,81 @@ jobs:
                       "type": "plain_text",
                       "text": "GitHub에서 보기"
                     },
-                    "url": "${RELEASE_URL}"
+                    "url": "'${RELEASE_URL}'"
                   }
                 ]
               }
             ]
-          }
-          EOF
-          )
+          }'
+          
+          # 최종 페이로드 디버깅 (필요시 주석 해제)
+          # echo "Final payload: $SLACK_PAYLOAD"
+          
+          # 메시지 전송
+          curl -X POST -H 'Content-Type: application/json' --data "$SLACK_PAYLOAD" "$SLACK_WEBHOOK_URL" || echo "Slack 전송에 실패했습니다"
+              if: success() && steps.release-drafter.outputs.id
+              env:
+                SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+                RELEASE_VERSION: ${{ steps.release-drafter.outputs.tag_name }}
+                RELEASE_URL: ${{ steps.release-drafter.outputs.html_url }}
+                RELEASE_DATE: ${{ env.RELEASE_DATE }}
+                RELEASE_BODY: ${{ steps.clean-notes.outputs.cleaned_body }}
+              run: |
+                # 릴리스 노트 내용을 안전하게 처리
+                # 1. 길이 제한 (2000자)
+                TRIMMED_BODY=$(echo "$RELEASE_BODY" | cut -c1-2000)
+                if [ ${#RELEASE_BODY} -gt 2000 ]; then
+                  TRIMMED_BODY="${TRIMMED_BODY}...\n\n(릴리스 노트가 잘렸습니다. 전체 내용은 GitHub에서 확인하세요)"
+                fi
+                
+                # 2. JSON 이스케이프 처리
+                ESCAPED_BODY=$(echo "$TRIMMED_BODY" | jq -R -s '.')
+                
+                # Slack 페이로드 생성 (이스케이프된 본문 사용)
+                SLACK_PAYLOAD=$(cat <<EOF
+                {
+                  "text": "🎉 새 릴리스 ${RELEASE_VERSION} 발행 (${RELEASE_DATE})",
+                  "blocks": [
+                    {
+                      "type": "header",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "🎉 새 릴리스 발행: ${RELEASE_VERSION}",
+                        "emoji": true
+                      }
+                    },
+                    {
+                      "type": "section",
+                      "text": {
+                        "type": "mrkdwn",
+                        "text": "*발행일:* ${RELEASE_DATE}"
+                      }
+                    },
+                    {
+                      "type": "section",
+                      "text": {
+                        "type": "mrkdwn",
+                        "text": ${ESCAPED_BODY}
+                      }
+                    },
+                    {
+                      "type": "actions",
+                      "elements": [
+                        {
+                          "type": "button",
+                          "action_id": "view_release",
+                          "text": {
+                            "type": "plain_text",
+                            "text": "GitHub에서 보기"
+                          },
+                          "url": "${RELEASE_URL}"
+                        }
+                      ]
+                    }
+                  ]
+                }
+                EOF
+                )
 
-          # Slack에 메시지 전송
-          curl -X POST -H 'Content-type: application/json' --data "${SLACK_MESSAGE}" "${SLACK_WEBHOOK_URL}"
+                # 메시지 전송
+                curl -X POST -H 'Content-Type: application/json' --data "$SLACK_PAYLOAD" "$SLACK_WEBHOOK_URL"
