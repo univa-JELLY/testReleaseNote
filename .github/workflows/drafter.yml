@@ -77,6 +77,15 @@ jobs:
           gh api repos/${{ github.repository }}/releases/$RELEASE_ID -X PATCH -F body="$CLEANED_BODY"
 
       - name: Publish release via gh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG=${{ steps.release-drafter.outputs.tag_name }}
-          gh release edit "$TAG" --draft=false
+          # 릴리스 ID 가져오기
+          RELEASE_ID=${{ steps.release-drafter.outputs.id }}
+          if [ -z "$RELEASE_ID" ]; then
+            echo "No release ID found. Skipping publish step."
+            exit 0
+          fi
+
+          echo "Publishing release with ID: $RELEASE_ID"
+          gh api repos/${{ github.repository }}/releases/$RELEASE_ID -X PATCH -F draft=false
