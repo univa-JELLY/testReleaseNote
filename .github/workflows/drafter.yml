@@ -67,7 +67,8 @@ jobs:
           CLEANED_BODY=$(echo "$BODY" | sed 's/\[[A-Za-z0-9_-]\+\] //g')
 
           # 날짜 변수 대체 (환경 변수 문법을 실제 날짜로 대체)
-          CLEANED_BODY=$(echo "$CLEANED_BODY" | sed "s/\${{ env.RELEASE_DATE }}/$RELEASE_DATE/g")
+          # 날짜 플레이스홀더 대체
+          CLEANED_BODY=$(echo "$CLEANED_BODY" | sed "s/RELEASE_DATE_PLACEHOLDER/$RELEASE_DATE/g")
 
           # 수정된 내용으로 릴리스 업데이트
           echo "Updating release notes for ID: $RELEASE_ID"
