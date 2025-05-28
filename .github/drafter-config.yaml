@@ -1,0 +1,51 @@
+# .github/drafter-config.yaml
+
+# Draft release 제목 및 태그 형식
+name-template: "v$RESOLVED_VERSION"
+tag-template: "v$RESOLVED_VERSION"
+commitish: main
+
+# 변경사항 그룹화 (구분)
+categories:
+  - title: "New"
+    labels:
+      - "new"
+  - title: "Feature"
+    labels:
+      - "feature"
+  - title: "Modified"
+    labels:
+      - "modified"
+  - title: "Fixed"
+    labels:
+      - "fix"
+      - "bugfix"
+      - "bug"
+  - title: "Deprecated"
+    labels:
+      - "deprecated"
+
+# 커스텀 change 포맷
+change-template: "- **$TITLE**"
+change-title-escapes: '\<*_&'
+
+# 레이블 기반 버전 bump 규칙
+version-resolver:
+  major:
+    labels:
+      - "major"
+  minor:
+    labels:
+      - "minor"
+  patch:
+    labels:
+      - "patch"
+  default: patch
+
+# 최종 Release Notes 템플릿
+template: |
+  # 버전 $RESOLVED_VERSION
+  _발행일: $RELEASE_DATE_  
+
+  ## 변경 내역
+  $CHANGES
