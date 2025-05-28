@@ -3,9 +3,9 @@ name: Draft new release
 on:
   pull_request:
     branches:
-      - main # main 브랜치 대상
+      - main
     types:
-      - closed # PR이 closed(머지 또는 닫힘)될 때 트리거
+      - closed
 
 jobs:
   release-draft:
@@ -30,6 +30,9 @@ jobs:
           sudo apt-get install -y jq
           sudo apt-get install -y gh
 
+      - name: Authenticate gh CLI
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
+
       - name: Run Release Drafter
         uses: release-drafter/release-drafter@v6
         with:
@@ -41,7 +44,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG_NAME=$(gh api repos/${{ github.repository }}/releases --jq '.[0].tag_name')
+          TAG_NAME=$(gh api repos/${{ github.repository }}/releases --jq '.[0].tag_name' || echo "")
+          if [ -z "$TAG_NAME" ]; then
+            echo "No releases found. Skipping cleanup."
+            exit 0
+          fi
           RELEASE_ID=$(gh api repos/${{ github.repository }}/releases/tags/$TAG_NAME --jq '.id')
           BODY=$(gh api repos/${{ github.repository }}/releases/$RELEASE_ID --jq '.body' | sed 's/\[MODIFY\] //g')
           gh api repos/${{ github.repository }}/releases/$RELEASE_ID -X PATCH -F body="$BODY"
