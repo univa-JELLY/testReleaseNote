@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
       - name: Set release date
         run: echo "RELEASE_DATE=$(date -u +"%Y-%m-%d")" >> $GITHUB_ENV
@@ -76,5 +78,5 @@ jobs:
 
       - name: Publish release via gh
         run: |
-          TAG=v${{ steps.release-drafter.outputs.tag_name }}
-          gh release edit $TAG --draft=false
+          TAG=${{ steps.release-drafter.outputs.tag_name }}
+          gh release edit "$TAG" --draft=false
