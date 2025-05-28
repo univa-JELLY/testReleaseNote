@@ -45,7 +45,7 @@ version-resolver:
 # 최종 Release Notes 템플릿
 template: |
   # 버전 $RESOLVED_VERSION
-  _발행일: ${{ env.RELEASE_DATE }}_  
+  _발행일: RELEASE_DATE_PLACEHOLDER_  
 
   ## 변경 내역
   $CHANGES

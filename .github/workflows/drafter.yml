@@ -44,6 +44,7 @@ jobs:
       - name: Clean up release notes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_DATE: ${{ env.RELEASE_DATE }}
         run: |
           # Release Drafter의 출력에서 릴리스 ID 직접 사용
           RELEASE_ID=${{ steps.release-drafter.outputs.id }}
@@ -53,6 +54,7 @@ jobs:
           fi
 
           echo "Using release ID: $RELEASE_ID"
+          echo "Current date: $RELEASE_DATE"
 
           # 릴리스 정보 가져오기 (드래프트 포함)
           BODY=$(gh api repos/${{ github.repository }}/releases/$RELEASE_ID --jq '.body' || echo "")
@@ -63,6 +65,9 @@ jobs:
 
           # 모든 유형의 접두사 제거 ([FEAT], [MODIFY], [FIX] 등)
           CLEANED_BODY=$(echo "$BODY" | sed 's/\[[A-Za-z0-9_-]\+\] //g')
+
+          # 날짜 변수 대체 (환경 변수 문법을 실제 날짜로 대체)
+          CLEANED_BODY=$(echo "$CLEANED_BODY" | sed "s/\${{ env.RELEASE_DATE }}/$RELEASE_DATE/g")
 
           # 수정된 내용으로 릴리스 업데이트
           echo "Updating release notes for ID: $RELEASE_ID"
