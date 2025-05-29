@@ -79,33 +79,39 @@ jobs:
           RELEASE_DATE: ${{ env.RELEASE_DATE }}
           RELEASE_BODY: ${{ steps.clean-notes.outputs.cleaned_body }}
         run: |
-          # 릴리스 노트 마크다운 포맷 변환 (Slack 호환성 향상)
-          SLACK_BODY=$(echo "$RELEASE_BODY" | sed 's/###/*/g' | sed 's/##/*/g' | sed 's/#/*/g')
+          # Slack 호환을 위해 Markdown 헤더(#)을 * 로 치환
+          SLACK_BODY=$(echo "$RELEASE_BODY" | sed 's/^###/* /g; s/^##/* /g; s/^#/* /g')
 
-          # 1. 길이 제한 (1500자 - Slack 제한에 안전한 범위)
-          TRIMMED_BODY=$(echo "$SLACK_BODY" | cut -c1-1500)
+          # 1500자 이상이면 자르고 안내 문구 덧붙이기
           if [ ${#SLACK_BODY} -gt 1500 ]; then
-            TRIMMED_BODY="${TRIMMED_BODY}...\n(릴리스 노트가 잘렸습니다. 전체 내용은 GitHub에서 확인하세요)"
+            SLACK_BODY="${SLACK_BODY:0:1500}...\n(릴리스 노트가 잘렸습니다. 전체 내용은 GitHub에서 확인하세요)"
           fi
 
-          # 간단한 텍스트 메시지로 대체 - 더 안정적인 방식
-          SLACK_PAYLOAD='{
-            "text": "🎉 새 릴리스 배포: '"${RELEASE_VERSION}"'",
-            "attachments": [
-              {
-                "color": "#36a64f",
-                "pretext": "릴리스 노트:",
-                "title": "'"${RELEASE_VERSION}"' ('"${RELEASE_DATE}"')",
-                "title_link": "'"${RELEASE_URL}"'",
-                "text": "'"${TRIMMED_BODY//$'\n'/\\n}"'",
-                "footer": "GitHub Release",
-                "footer_icon": "https://github.githubassets.com/favicon.ico"
-              }
-            ]
-          }'
+          # jq 로 JSON 조립 (변수값 자동으로 이스케이프 됨)
+          SLACK_PAYLOAD=$(jq -n \
+            --arg text "🎉 새 릴리스 배포: $RELEASE_VERSION" \
+            --arg version "$RELEASE_VERSION" \
+            --arg date "$RELEASE_DATE" \
+            --arg url "$RELEASE_URL" \
+            --arg body "$SLACK_BODY" \
+            '{
+              text: $text,
+              attachments: [
+                {
+                  color: "#36a64f",
+                  pretext: "릴리스 노트:",
+                  title: "\($version) (\($date))",
+                  title_link: $url,
+                  text: $body,
+                  footer: "GitHub Release",
+                  footer_icon: "https://github.githubassets.com/favicon.ico"
+                }
+              ]
+            }'
+          )
 
-          # 페이로드 디버그 정보 출력
-          echo "Sending slack notification..."
+          # 디버깅: 페이로드 출력
+          echo "$SLACK_PAYLOAD" | jq .
 
-          # 메시지 전송
-          curl -X POST -H 'Content-Type: application/json' --data "$SLACK_PAYLOAD" "$SLACK_WEBHOOK_URL" -v || echo "Slack 전송 실패: $?"
+          # 실제 전송
+          curl -X POST -H 'Content-Type: application/json' --data "$SLACK_PAYLOAD" "$SLACK_WEBHOOK_URL"
