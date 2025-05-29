@@ -65,6 +65,10 @@ jobs:
             | sed "s/RELEASE_DATE_PLACEHOLDER/$RELEASE_DATE/g"
           )
 
+          # 수정된 내용으로 릴리스 업데이트
+          echo "Updating GitHub release with cleaned content..."
+          gh api repos/${{ github.repository }}/releases/$RELEASE_ID -X PATCH -F body="$CLEANED_BODY"
+
           # cleaned_body를 output으로 내보내기
           echo "cleaned_body<<EOF" >> $GITHUB_OUTPUT
           echo "$CLEANED_BODY" >> $GITHUB_OUTPUT
@@ -80,7 +84,7 @@ jobs:
           RELEASE_BODY: ${{ steps.clean-notes.outputs.cleaned_body }}
         run: |
           # Slack 호환을 위해 Markdown 헤더(#)을 * 로 치환
-          SLACK_BODY=$(echo "$RELEASE_BODY" | sed 's/^###/* /g; s/^##/* /g; s/^#/* /g')
+          SLACK_BODY=$(echo "$RELEASE_BODY" | sed 's/^###/* /g; s/^##/* /g; s/^#/* /g' | sed 's/\*\*//g')
 
           # 1500자 이상이면 자르고 안내 문구 덧붙이기
           if [ ${#SLACK_BODY} -gt 1500 ]; then
