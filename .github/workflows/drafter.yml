@@ -82,59 +82,30 @@ jobs:
           # 릴리스 노트 마크다운 포맷 변환 (Slack 호환성 향상)
           SLACK_BODY=$(echo "$RELEASE_BODY" | sed 's/###/*/g' | sed 's/##/*/g' | sed 's/#/*/g')
 
-          # 1. 길이 제한 (2000자)
-          TRIMMED_BODY=$(echo "$SLACK_BODY" | cut -c1-2000)
-          if [ ${#SLACK_BODY} -gt 2000 ]; then
-            TRIMMED_BODY="${TRIMMED_BODY}...\n\n(릴리스 노트가 잘렸습니다. 전체 내용은 GitHub에서 확인하세요)"
+          # 1. 길이 제한 (1500자 - Slack 제한에 안전한 범위)
+          TRIMMED_BODY=$(echo "$SLACK_BODY" | cut -c1-1500)
+          if [ ${#SLACK_BODY} -gt 1500 ]; then
+            TRIMMED_BODY="${TRIMMED_BODY}...\n(릴리스 노트가 잘렸습니다. 전체 내용은 GitHub에서 확인하세요)"
           fi
 
-          # 2. JSON 이스케이프 처리 (jq 사용)
-          ESCAPED_BODY=$(echo "$TRIMMED_BODY" | jq -R -s '.')
-
-          # Slack 페이로드 생성 (cat으로 여러 줄 문자열 생성)
-          SLACK_PAYLOAD=$(cat <<EOF
-          {
-            "text": "🎉 새 릴리스 ${RELEASE_VERSION} 발행 (${RELEASE_DATE})",
-            "blocks": [
+          # 간단한 텍스트 메시지로 대체 - 더 안정적인 방식
+          SLACK_PAYLOAD='{
+            "text": "🎉 새 릴리스 배포: '"${RELEASE_VERSION}"'",
+            "attachments": [
               {
-                "type": "header",
-                "text": {
-                  "type": "plain_text",
-                  "text": "🎉 새 릴리스 발행: ${RELEASE_VERSION}",
-                  "emoji": true
-                }
-              },
-              {
-                "type": "section",
-                "text": {
-                  "type": "mrkdwn",
-                  "text": "*발행일:* ${RELEASE_DATE}"
-                }
-              },
-              {
-                "type": "section",
-                "text": {
-                  "type": "mrkdwn",
-                  "text": ${ESCAPED_BODY}
-                }
-              },
-              {
-                "type": "actions",
-                "elements": [
-                  {
-                    "type": "button",
-                    "text": {
-                      "type": "plain_text",
-                      "text": "GitHub에서 보기"
-                    },
-                    "url": "${RELEASE_URL}"
-                  }
-                ]
+                "color": "#36a64f",
+                "pretext": "릴리스 노트:",
+                "title": "'"${RELEASE_VERSION}"' ('"${RELEASE_DATE}"')",
+                "title_link": "'"${RELEASE_URL}"'",
+                "text": "'"${TRIMMED_BODY//$'\n'/\\n}"'",
+                "footer": "GitHub Release",
+                "footer_icon": "https://github.githubassets.com/favicon.ico"
               }
             ]
-          }
-          EOF
-          )
+          }'
+
+          # 페이로드 디버그 정보 출력
+          echo "Sending slack notification..."
 
           # 메시지 전송
-          curl -X POST -H 'Content-Type: application/json' --data "$SLACK_PAYLOAD" "$SLACK_WEBHOOK_URL" || echo "Slack 전송 실패: $?"
+          curl -X POST -H 'Content-Type: application/json' --data "$SLACK_PAYLOAD" "$SLACK_WEBHOOK_URL" -v || echo "Slack 전송 실패: $?"
