@@ -83,8 +83,10 @@ jobs:
           RELEASE_DATE: ${{ env.RELEASE_DATE }}
           RELEASE_BODY: ${{ steps.clean-notes.outputs.cleaned_body }}
         run: |
-          # Slack 호환을 위해 Markdown 헤더(#)을 * 로 치환
-          SLACK_BODY=$(echo "$RELEASE_BODY" | sed 's/^###/* /g; s/^##/* /g; s/^#/* /g' | sed 's/\*\*//g')
+          # Slack 호환을 위해 Markdown 헤더(#)를 볼드체(*텍스트*)로 치환
+          SLACK_BODY=$(echo "$RELEASE_BODY" | \
+            sed 's/^### \(.*\)/*\1*/g; s/^## \(.*\)/*\1*/g; s/^# \(.*\)/*\1*/g' | \
+            sed 's/\*\*//g')
 
           # 1500자 이상이면 자르고 안내 문구 덧붙이기
           if [ ${#SLACK_BODY} -gt 1500 ]; then
