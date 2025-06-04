@@ -43,7 +43,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Clean up release notes
+      - name: Process release notes with PR descriptions
         id: clean-notes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -51,30 +51,76 @@ jobs:
         run: |
           RELEASE_ID=${{ steps.release-drafter.outputs.id }}
           if [ -z "$RELEASE_ID" ]; then
-            echo "No release ID found. Skipping cleanup."
+            echo "No release ID found. Skipping processing."
             exit 0
           fi
 
           # 원본 릴리스 노트 가져오기
           BODY=$(gh api repos/${{ github.repository }}/releases/$RELEASE_ID --jq '.body' || echo "")
           if [ -z "$BODY" ]; then
-            echo "Could not get release body. Skipping cleanup."
+            echo "Could not get release body. Skipping processing."
             exit 0
           fi
 
+          # 릴리스 노트에서 PR 번호 추출
+          echo "Extracting PR numbers from release notes..."
+          PR_PATTERN='- \*\*.*\(\#([0-9]+)\).*\*\*'
+          PR_NUMBERS=$(echo "$BODY" | grep -oP '\(#\K[0-9]+(?=\))' || echo "")
+
+          if [ -z "$PR_NUMBERS" ]; then
+            echo "No PR numbers found in release notes."
+          else
+            echo "Found PR numbers: $PR_NUMBERS"
+            
+            # 각 PR에 대한 설명 가져와서 대체
+            for PR_NUM in $PR_NUMBERS; do
+              echo "Processing PR #$PR_NUM..."
+              
+              # PR 정보 가져오기
+              PR_INFO=$(gh api repos/${{ github.repository }}/pulls/$PR_NUM --jq '{title: .title, body: .body}' 2>/dev/null || echo '{"title":"", "body":""}')
+              
+              # PR 제목과 설명 추출
+              PR_TITLE=$(echo "$PR_INFO" | jq -r '.title')
+              PR_BODY=$(echo "$PR_INFO" | jq -r '.body')
+              
+              if [ -z "$PR_TITLE" ] || [ "$PR_TITLE" = "null" ]; then
+                echo "Could not get title for PR #$PR_NUM. Skipping."
+                continue
+              fi
+              
+              # PR 설명에서 유효한 내용 추출
+              # 설명이 비어있거나 너무 짧으면 PR 제목 유지
+              DESCRIPTION=$(echo "$PR_BODY" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+              if [ -z "$DESCRIPTION" ] || [ ${#DESCRIPTION} -lt 5 ]; then
+                echo "PR #$PR_NUM has no valid description. Using title instead."
+                DESCRIPTION="$PR_TITLE"
+              else
+                # 설명에서 첫 번째 유효한 단락만 사용 (너무 길지 않도록)
+                DESCRIPTION=$(echo "$DESCRIPTION" | awk 'NF{p=1} p{print; if(length($0)==0) exit}' | head -n 5 | tr '\n' ' ')
+              fi
+              
+              # PR 제목을 설명으로 대체 (이스케이프 처리 필요)
+              PR_TITLE_ESCAPED=$(echo "$PR_TITLE" | sed 's/[\/&]/\\&/g')
+              DESCRIPTION_ESCAPED=$(echo "$DESCRIPTION" | sed 's/[\/&]/\\&/g')
+              
+              echo "Replacing title with description for PR #$PR_NUM"
+              BODY=$(echo "$BODY" | sed "s/- \*\*$PR_TITLE_ESCAPED\( \)\?(#$PR_NUM).*\*\*/- **$DESCRIPTION_ESCAPED (#$PR_NUM)**/g")
+            done
+          fi
+
           # 접두사 제거 및 날짜 플레이스홀더 치환
-          CLEANED_BODY=$(echo "$BODY" \
+          PROCESSED_BODY=$(echo "$BODY" \
             | sed 's/\[[A-Za-z0-9_-]\+\] //g' \
             | sed "s/RELEASE_DATE_PLACEHOLDER/$RELEASE_DATE/g"
           )
 
           # 수정된 내용으로 릴리스 업데이트
-          echo "Updating GitHub release with cleaned content..."
-          gh api repos/${{ github.repository }}/releases/$RELEASE_ID -X PATCH -F body="$CLEANED_BODY"
+          echo "Updating GitHub release with processed content..."
+          gh api repos/${{ github.repository }}/releases/$RELEASE_ID -X PATCH -F body="$PROCESSED_BODY"
 
-          # cleaned_body를 output으로 내보내기
+          # 처리된 내용을 output으로 내보내기
           echo "cleaned_body<<EOF" >> $GITHUB_OUTPUT
-          echo "$CLEANED_BODY" >> $GITHUB_OUTPUT
+          echo "$PROCESSED_BODY" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Send to Slack
