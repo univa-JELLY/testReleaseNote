@@ -1,176 +1,106 @@
-# .github/workflows/drafter.yml
-name: Draft new release
+# .github/workflows/pr-to-slack.yml
+
+name: PR to Slack
 
 on:
-  push:
+  pull_request:
+    types: [closed]
     branches:
       - main
 
-permissions:
-  contents: read
-
 jobs:
-  release-draft:
-    name: Update Draft Release Notes
+  notify-slack:
+    # PR이 머지된 경우에만 실행
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
-    permissions:
-      contents: write
-      pull-requests: write
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
+      - name: Set current date
+        run: echo "CURRENT_DATE=$(date -u +\"%Y-%m-%d\")" >> $GITHUB_ENV
 
-      - name: Set release date
-        run: echo "RELEASE_DATE=$(date -u +%Y-%m-%d)" >> $GITHUB_ENV
+      - name: Get PR info
+        id: pr-info
+        run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_BODY="${{ github.event.pull_request.body }}"
+          PR_URL="${{ github.event.pull_request.html_url }}"
+          PR_AUTHOR="${{ github.event.pull_request.user.login }}"
+          PR_MERGED_BY="${{ github.event.pull_request.merged_by.login }}"
+          REPO_NAME="${{ github.repository }}"
 
-      - name: Install dependencies
+          if [ -z "$PR_BODY" ] || [ $(echo "$PR_BODY" | xargs | wc -c) -lt 5 ]; then
+            # 본문이 없으면 제목을 사용
+            echo "PR_CONTENT=$PR_TITLE" >> $GITHUB_OUTPUT
+          else
+            PR_CONTENT=$(echo "$PR_BODY" | tr '\n' ' ' | sed 's/  */ /g' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
+            if [ ${#PR_CONTENT} -gt 1000 ]; then
+              PR_CONTENT="${PR_CONTENT:0:997}..."
+            fi
+            echo "PR_CONTENT<<EOF" >> $GITHUB_OUTPUT
+            echo "$PR_CONTENT" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+
+          echo "PR_TITLE=$PR_TITLE"       >> $GITHUB_OUTPUT
+          echo "PR_NUMBER=$PR_NUMBER"     >> $GITHUB_OUTPUT
+          echo "PR_URL=$PR_URL"           >> $GITHUB_OUTPUT
+          echo "PR_AUTHOR=$PR_AUTHOR"     >> $GITHUB_OUTPUT
+          echo "PR_MERGED_BY=$PR_MERGED_BY" >> $GITHUB_OUTPUT
+          echo "REPO_NAME=$REPO_NAME"     >> $GITHUB_OUTPUT
+
+      - name: Install jq
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq gh
-
-      - name: Authenticate gh CLI
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
-
-      - name: Run Release Drafter
-        id: release-drafter
-        uses: release-drafter/release-drafter@v6
-        with:
-          config-name: drafter-config.yaml
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Process release notes with PR descriptions
-        id: clean-notes
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_DATE: ${{ env.RELEASE_DATE }}
-        run: |
-          RELEASE_ID=${{ steps.release-drafter.outputs.id }}
-          if [ -z "$RELEASE_ID" ]; then
-            echo "No release ID found. Skipping processing."
-            exit 0
-          fi
-
-          # 원본 릴리스 노트 가져오기
-          BODY=$(gh api repos/${{ github.repository }}/releases/$RELEASE_ID --jq '.body' || echo "")
-          if [ -z "$BODY" ]; then
-            echo "Could not get release body. Skipping processing."
-            exit 0
-          fi
-
-          # 릴리스 노트에서 PR 번호 추출
-          echo "Extracting PR numbers from release notes..."
-          PR_PATTERN='- \*\*.*\(\#([0-9]+)\).*\*\*'
-          PR_NUMBERS=$(echo "$BODY" | grep -oP '\(#\K[0-9]+(?=\))' || echo "")
-
-          if [ -z "$PR_NUMBERS" ]; then
-            echo "No PR numbers found in release notes."
-          else
-            echo "Found PR numbers: $PR_NUMBERS"
-            
-            # 각 PR에 대한 설명 가져와서 대체
-            for PR_NUM in $PR_NUMBERS; do
-              echo "Processing PR #$PR_NUM..."
-              
-              # PR 정보 가져오기
-              PR_INFO=$(gh api repos/${{ github.repository }}/pulls/$PR_NUM --jq '{title: .title, body: .body}' 2>/dev/null || echo '{"title":"", "body":""}')
-              
-              # PR 제목과 설명 추출
-              PR_TITLE=$(echo "$PR_INFO" | jq -r '.title')
-              PR_BODY=$(echo "$PR_INFO" | jq -r '.body')
-              
-              if [ -z "$PR_TITLE" ] || [ "$PR_TITLE" = "null" ]; then
-                echo "Could not get title for PR #$PR_NUM. Skipping."
-                continue
-              fi
-              
-              # PR 설명에서 유효한 내용 추출
-              DESCRIPTION=$(echo "$PR_BODY" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-              if [ -z "$DESCRIPTION" ] || [ ${#DESCRIPTION} -lt 5 ]; then
-                echo "PR #$PR_NUM has no valid description. Using title instead."
-                DESCRIPTION="$PR_TITLE"
-              else
-                # PR 설명 전체 사용 (줄바꿈은 공백으로 변환하여 포맷 유지)
-                DESCRIPTION=$(echo "$DESCRIPTION" | tr '\n' ' ' | sed 's/  / /g')
-                
-                # 설명이 너무 길면 자르기 (300자 제한)
-                if [ ${#DESCRIPTION} -gt 300 ]; then
-                  DESCRIPTION="${DESCRIPTION:0:297}..."
-                fi
-              fi
-              
-              # PR 제목을 설명으로 대체 (이스케이프 처리 필요)
-              PR_TITLE_ESCAPED=$(echo "$PR_TITLE" | sed 's/[\/&]/\\&/g')
-              DESCRIPTION_ESCAPED=$(echo "$DESCRIPTION" | sed 's/[\/&]/\\&/g')
-              
-              echo "Replacing title with description for PR #$PR_NUM"
-              BODY=$(echo "$BODY" | sed "s/- \*\*$PR_TITLE_ESCAPED\( \)\?(#$PR_NUM).*\*\*/- **$DESCRIPTION_ESCAPED (#$PR_NUM)**/g")
-            done
-          fi
-
-          # 접두사 제거 및 날짜 플레이스홀더 치환
-          PROCESSED_BODY=$(echo "$BODY" \
-            | sed 's/\[[A-Za-z0-9_-]\+\] //g' \
-            | sed "s/RELEASE_DATE_PLACEHOLDER/$RELEASE_DATE/g"
-          )
-
-          # 수정된 내용으로 릴리스 업데이트
-          echo "Updating GitHub release with processed content..."
-          gh api repos/${{ github.repository }}/releases/$RELEASE_ID -X PATCH -F body="$PROCESSED_BODY"
-
-          # 처리된 내용을 output으로 내보내기
-          echo "cleaned_body<<EOF" >> $GITHUB_OUTPUT
-          echo "$PROCESSED_BODY" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          sudo apt-get install -y jq
 
       - name: Send to Slack
-        if: success() && steps.release-drafter.outputs.id
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          RELEASE_VERSION: ${{ steps.release-drafter.outputs.tag_name }}
-          RELEASE_URL: ${{ steps.release-drafter.outputs.html_url }}
-          RELEASE_DATE: ${{ env.RELEASE_DATE }}
-          RELEASE_BODY: ${{ steps.clean-notes.outputs.cleaned_body }}
+          PR_CONTENT: ${{ steps.pr-info.outputs.PR_CONTENT }}
+          PR_TITLE: ${{ steps.pr-info.outputs.PR_TITLE }}
+          PR_NUMBER: ${{ steps.pr-info.outputs.PR_NUMBER }}
+          PR_URL: ${{ steps.pr-info.outputs.PR_URL }}
+          PR_AUTHOR: ${{ steps.pr-info.outputs.PR_AUTHOR }}
+          PR_MERGED_BY: ${{ steps.pr-info.outputs.PR_MERGED_BY }}
+          REPO_NAME: ${{ steps.pr-info.outputs.REPO_NAME }}
+          CURRENT_DATE: ${{ env.CURRENT_DATE }}
         run: |
-          # Slack 호환을 위해 Markdown 헤더(#)를 볼드체(*텍스트*)로 치환
-          SLACK_BODY=$(echo "$RELEASE_BODY" | \
-            sed 's/^### \(.*\)/*\1*/g; s/^## \(.*\)/*\1*/g; s/^# \(.*\)/*\1*/g' | \
-            sed 's/\*\*//g')
+          # GitHub 마크다운 볼드(**…**) → Slack 볼드(*…*)
+          SLACK_CONTENT=$(echo "$PR_CONTENT" | sed 's/\*\*\([^*]*\)\*\*/\*\1\*/g')
 
-          # 1500자 이상이면 자르고 안내 문구 덧붙이기
-          if [ ${#SLACK_BODY} -gt 1500 ]; then
-            SLACK_BODY="${SLACK_BODY:0:1500}...\n(릴리스 노트가 잘렸습니다. 전체 내용은 GitHub에서 확인하세요)"
-          fi
-
-          # jq 로 JSON 조립 (변수값 자동으로 이스케이프 됨)
           SLACK_PAYLOAD=$(jq -n \
-            --arg text "🎉 새 릴리스 배포: $RELEASE_VERSION" \
-            --arg version "$RELEASE_VERSION" \
-            --arg date "$RELEASE_DATE" \
-            --arg url "$RELEASE_URL" \
-            --arg body "$SLACK_BODY" \
+            --arg text "🔄 PR이 main 브랜치에 병합되었습니다" \
+            --arg title "$PR_TITLE (#$PR_NUMBER)" \
+            --arg content "$SLACK_CONTENT" \
+            --arg pr_url "$PR_URL" \
+            --arg repo "$REPO_NAME" \
+            --arg date "$CURRENT_DATE" \
+            --arg author "$PR_AUTHOR" \
+            --arg merged_by "$PR_MERGED_BY" \
             '{
               text: $text,
               attachments: [
                 {
                   color: "#36a64f",
-                  pretext: "릴리스 노트:",
-                  title: "\($version) (\($date))",
-                  title_link: $url,
-                  text: $body,
-                  footer: "GitHub Release",
+                  title: $title,
+                  title_link: $pr_url,
+                  text: $content,
+                  fields: [
+                    { title: "저장소", value: $repo, short: true },
+                    { title: "병합 일자", value: $date, short: true },
+                    { title: "작성자",   value: $author, short: true },
+                    { title: "병합자",   value: $merged_by, short: true }
+                  ],
+                  footer: "GitHub PR",
                   footer_icon: "https://github.githubassets.com/favicon.ico"
                 }
               ]
             }'
           )
 
-          # 디버깅: 페이로드 출력
+          # 확인용 출력
           echo "$SLACK_PAYLOAD" | jq .
 
-          # 실제 전송
+          # 전송
           curl -X POST -H 'Content-Type: application/json' --data "$SLACK_PAYLOAD" "$SLACK_WEBHOOK_URL"
