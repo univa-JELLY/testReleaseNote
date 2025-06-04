@@ -35,9 +35,6 @@ jobs:
             echo "EOF" >> $GITHUB_OUTPUT
           fi
 
-      - name: Install jq
-        run: sudo apt-get install -y jq
-
       - name: Send to Slack
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -53,21 +50,11 @@ jobs:
           # 불필요한 빈 불릿 포인트 제거
           FORMATTED_CONTENT=$(echo "$BULLET_LIST" | grep -v '^- $')
 
-          # 단순화된 Slack 메시지 페이로드
-          SLACK_PAYLOAD=$(jq -n \
-            --arg title "📦 릴리즈노트 ($FORMATTED_DATE)" \
-            --arg content "$FORMATTED_CONTENT" \
-            '{
-              attachments: [
-                {
-                  color: "#36a64f", 
-                  title: $title,
-                  text: $content,
-                  mrkdwn_in: ["text"]
-                }
-              ]
-            }'
-          )
+          # 줄바꿈 문자를 JSON에서 사용 가능한 형태로 치환
+          ESCAPED_CONTENT=$(echo "$FORMATTED_CONTENT" | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')
+
+          # JSON 페이로드 직접 생성
+          SLACK_PAYLOAD='{"attachments":[{"color":"#36a64f","title":"📦 릴리즈노트 ('$FORMATTED_DATE')","text":"'"$ESCAPED_CONTENT"'","mrkdwn_in":["text"]}]}'
 
           # 디버깅 (문제 해결에 도움이 됨)
           echo "날짜: $FORMATTED_DATE"
