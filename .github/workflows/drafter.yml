@@ -42,13 +42,6 @@ jobs:
             echo "EOF" >> $GITHUB_OUTPUT
           fi
 
-          echo "PR_TITLE=$PR_TITLE"       >> $GITHUB_OUTPUT
-          echo "PR_NUMBER=$PR_NUMBER"     >> $GITHUB_OUTPUT
-          echo "PR_URL=$PR_URL"           >> $GITHUB_OUTPUT
-          echo "PR_AUTHOR=$PR_AUTHOR"     >> $GITHUB_OUTPUT
-          echo "PR_MERGED_BY=$PR_MERGED_BY" >> $GITHUB_OUTPUT
-          echo "REPO_NAME=$REPO_NAME"     >> $GITHUB_OUTPUT
-
       - name: Install jq
         run: |
           sudo apt-get update
@@ -58,42 +51,26 @@ jobs:
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           PR_CONTENT: ${{ steps.pr-info.outputs.PR_CONTENT }}
-          PR_TITLE: ${{ steps.pr-info.outputs.PR_TITLE }}
-          PR_NUMBER: ${{ steps.pr-info.outputs.PR_NUMBER }}
-          PR_URL: ${{ steps.pr-info.outputs.PR_URL }}
-          PR_AUTHOR: ${{ steps.pr-info.outputs.PR_AUTHOR }}
-          PR_MERGED_BY: ${{ steps.pr-info.outputs.PR_MERGED_BY }}
-          REPO_NAME: ${{ steps.pr-info.outputs.REPO_NAME }}
           CURRENT_DATE: ${{ env.CURRENT_DATE }}
         run: |
-          # GitHub 마크다운 볼드(**…**) → Slack 볼드(*…*)
-          SLACK_CONTENT=$(echo "$PR_CONTENT" | sed 's/\*\*\([^*]*\)\*\*/\*\1\*/g')
+          # 현재 날짜 형식 변환 (YYYY-MM-DD → YYYY.MM.DD)
+          FORMATTED_DATE=$(echo "$CURRENT_DATE" | sed 's/-/./g')
 
+          # PR 설명 내용을 불릿 포인트로 변환
+          BULLET_POINTS=$(echo "$PR_CONTENT" | sed 's/- /\n- /g' | sed 's/\. /\.\n- /g')
+          FORMATTED_CONTENT=$(echo "- $BULLET_POINTS" | sed 's/- - /- /g')
+
+          # 단순화된 Slack 메시지 페이로드
           SLACK_PAYLOAD=$(jq -n \
-            --arg text "🔄 PR이 main 브랜치에 병합되었습니다" \
-            --arg title "$PR_TITLE (#$PR_NUMBER)" \
-            --arg content "$SLACK_CONTENT" \
-            --arg pr_url "$PR_URL" \
-            --arg repo "$REPO_NAME" \
-            --arg date "$CURRENT_DATE" \
-            --arg author "$PR_AUTHOR" \
-            --arg merged_by "$PR_MERGED_BY" \
+            --arg title "📦 릴리즈노트 ($FORMATTED_DATE)" \
+            --arg content "$FORMATTED_CONTENT" \
             '{
-              text: $text,
               attachments: [
                 {
                   color: "#36a64f",
                   title: $title,
-                  title_link: $pr_url,
                   text: $content,
-                  fields: [
-                    { title: "저장소", value: $repo, short: true },
-                    { title: "병합 일자", value: $date, short: true },
-                    { title: "작성자",   value: $author, short: true },
-                    { title: "병합자",   value: $merged_by, short: true }
-                  ],
-                  footer: "GitHub PR",
-                  footer_icon: "https://github.githubassets.com/favicon.ico"
+                  mrkdwn_in: ["text"]
                 }
               ]
             }'
