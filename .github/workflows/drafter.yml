@@ -25,7 +25,7 @@ jobs:
           fetch-depth: 0
 
       - name: Set release date
-        run: echo "RELEASE_DATE=$(date -u +\"%Y-%m-%d\")" >> $GITHUB_ENV
+        run: echo "RELEASE_DATE=$(date -u +%Y-%m-%d)" >> $GITHUB_ENV
 
       - name: Install dependencies
         run: |

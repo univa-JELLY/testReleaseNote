@@ -46,6 +46,11 @@ version-resolver:
       - "patch"
   default: patch
 
+replacers:
+  # [ABC], [FEAT], [FIX] 등의 모든 대괄호 접두어 제거
+  - search: '/\[[A-Za-z0-9_-]+\]\s*/g'
+    replace: ""
+
 # 최종 Release Notes 템플릿
 template: |
   # 버전 $RESOLVED_VERSION
