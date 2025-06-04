@@ -1,7 +1,6 @@
 # .github/drafter-config.yaml
 
 # Draft release 형식
-version-template: "$MAJOR.$MINOR.$PATCH"
 name-template: "v$RESOLVED_VERSION"
 tag-template: "v$RESOLVED_VERSION"
 commitish: main

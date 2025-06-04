@@ -89,14 +89,18 @@ jobs:
               fi
               
               # PR 설명에서 유효한 내용 추출
-              # 설명이 비어있거나 너무 짧으면 PR 제목 유지
               DESCRIPTION=$(echo "$PR_BODY" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
               if [ -z "$DESCRIPTION" ] || [ ${#DESCRIPTION} -lt 5 ]; then
                 echo "PR #$PR_NUM has no valid description. Using title instead."
                 DESCRIPTION="$PR_TITLE"
               else
-                # 설명에서 첫 번째 유효한 단락만 사용 (너무 길지 않도록)
-                DESCRIPTION=$(echo "$DESCRIPTION" | awk 'NF{p=1} p{print; if(length($0)==0) exit}' | head -n 5 | tr '\n' ' ')
+                # PR 설명 전체 사용 (줄바꿈은 공백으로 변환하여 포맷 유지)
+                DESCRIPTION=$(echo "$DESCRIPTION" | tr '\n' ' ' | sed 's/  / /g')
+                
+                # 설명이 너무 길면 자르기 (300자 제한)
+                if [ ${#DESCRIPTION} -gt 300 ]; then
+                  DESCRIPTION="${DESCRIPTION:0:297}..."
+                fi
               fi
               
               # PR 제목을 설명으로 대체 (이스케이프 처리 필요)
