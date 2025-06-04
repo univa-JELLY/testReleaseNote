@@ -44,22 +44,18 @@ jobs:
           # 현재 날짜 형식 변환 (YYYY-MM-DD → YYYY.MM.DD)
           FORMATTED_DATE=$(echo "$CURRENT_DATE" | tr -d '"' | sed 's/-/./g')
 
-          # PR 설명 변환
-          BULLET_LIST=$(echo "$PR_CONTENT" | sed 's/\\n/\n/g' | sed '/^\s*$/d' | sed -e 's/^[[:space:]]*/- /' | sed -e 's/^- - /- /')
+          # 줄바꿈을 Slack 마크다운 형식으로 변환
+          FORMATTED_CONTENT=$(echo "$PR_CONTENT" | sed 's/^- /• /g' | sed 's/^ - /  • /g')
 
-          # 불필요한 빈 불릿 포인트 제거
-          FORMATTED_CONTENT=$(echo "$BULLET_LIST" | grep -v '^- $')
+          # 이스케이핑 처리를 더 엄격하게 수정
+          ESCAPED_CONTENT=$(echo "$FORMATTED_CONTENT" | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g' | sed 's/\\/\\\\/g')
 
-          # 줄바꿈 문자를 JSON에서 사용 가능한 형태로 치환
-          ESCAPED_CONTENT=$(echo "$FORMATTED_CONTENT" | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')
+          # 더 단순한 JSON 페이로드 사용
+          SLACK_PAYLOAD='{"text":"📦 문제G 릴리즈노트 ('$FORMATTED_DATE')","blocks":[{"type":"section","text":{"type":"mrkdwn","text":"*📦 문제G 릴리즈노트 ('$FORMATTED_DATE')*\n'"$ESCAPED_CONTENT"'"}}]}'
 
-          # JSON 페이로드 직접 생성
-          SLACK_PAYLOAD='{"attachments":[{"color":"#36a64f","title":"📦 릴리즈노트 ('$FORMATTED_DATE')","text":"'"$ESCAPED_CONTENT"'","mrkdwn_in":["text"]}]}'
-
-          # 디버깅 (문제 해결에 도움이 됨)
-          echo "날짜: $FORMATTED_DATE"
-          echo "내용:"
-          echo "$FORMATTED_CONTENT"
+          # 디버깅
+          echo "페이로드:"
+          echo "$SLACK_PAYLOAD"
 
           # 전송
           curl -X POST -H 'Content-Type: application/json' --data "$SLACK_PAYLOAD" "$SLACK_WEBHOOK_URL"
