@@ -35,6 +35,9 @@ jobs:
             echo "EOF" >> $GITHUB_OUTPUT
           fi
 
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
       - name: Send to Slack
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -44,22 +47,34 @@ jobs:
           # 현재 날짜 형식 변환 (YYYY-MM-DD → YYYY.MM.DD)
           FORMATTED_DATE=$(echo "$CURRENT_DATE" | tr -d '"' | sed 's/-/./g')
 
-          # PR 설명 변환
-          BULLET_LIST=$(echo "$PR_CONTENT" | sed 's/\\n/\n/g' | sed '/^\s*$/d' | sed -e 's/^[[:space:]]*/- /' | sed -e 's/^- - /- /')
+          # PR 설명을 불릿 포인트로 변환 (특수 문자 처리 개선)
+          # 구분자를 줄바꿈으로 분리
+          echo "$PR_CONTENT" > pr_content.txt
+          cat pr_content.txt | sed 's/\. /\.\n/g' | sed 's/, /,\n/g' > formatted_content.txt
 
-          # 불필요한 빈 불릿 포인트 제거
-          FORMATTED_CONTENT=$(echo "$BULLET_LIST" | grep -v '^- $')
+          # 각 줄에 불릿 포인트 추가
+          cat formatted_content.txt | grep -v '^$' | sed 's/^/- /' > bullet_points.txt
 
-          # 줄바꿈 문자를 JSON에서 사용 가능한 형태로 치환
-          ESCAPED_CONTENT=$(echo "$FORMATTED_CONTENT" | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')
+          # jq를 사용하여 안전하게 JSON 생성 (이스케이프 자동 처리)
+          SLACK_PAYLOAD=$(jq -n \
+            --rawfile content bullet_points.txt \
+            --arg title "📦 문제G 릴리즈노트 ($FORMATTED_DATE)" \
+            '{
+              attachments: [
+                {
+                  color: "#36a64f",
+                  title: $title,
+                  text: $content,
+                  mrkdwn_in: ["text"]
+                }
+              ]
+            }'
+          )
 
-          # JSON 페이로드 직접 생성
-          SLACK_PAYLOAD='{"attachments":[{"color":"#36a64f","title":"📦 문제G 릴리즈노트 ('$FORMATTED_DATE')","text":"'"$ESCAPED_CONTENT"'","mrkdwn_in":["text"]}]}'
-
-          # 디버깅 (문제 해결에 도움이 됨)
+          # 디버깅
           echo "날짜: $FORMATTED_DATE"
           echo "내용:"
-          echo "$FORMATTED_CONTENT"
+          cat bullet_points.txt
 
           # 전송
           curl -X POST -H 'Content-Type: application/json' --data "$SLACK_PAYLOAD" "$SLACK_WEBHOOK_URL"
