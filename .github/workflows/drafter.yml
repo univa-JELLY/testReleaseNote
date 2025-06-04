@@ -47,10 +47,10 @@ jobs:
           # 현재 날짜 형식 변환 (YYYY-MM-DD → YYYY.MM.DD)
           FORMATTED_DATE=$(echo "$CURRENT_DATE" | tr -d '"' | sed 's/-/./g')
 
-          # PR 설명 그대로 사용 (불릿 포인트 추가 없이)
+          # PR 설명 그대로 사용
           echo "$PR_CONTENT" > bullet_points.txt
 
-          # jq를 사용하여 안전하게 JSON 생성 (이스케이프 자동 처리)
+          # jq를 사용하여 안전하게 JSON 생성
           SLACK_PAYLOAD=$(jq -n \
             --rawfile content bullet_points.txt \
             --arg title "📦 문제G 릴리즈노트 ($FORMATTED_DATE)" \
