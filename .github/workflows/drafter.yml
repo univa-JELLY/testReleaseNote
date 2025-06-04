@@ -47,13 +47,8 @@ jobs:
           # 현재 날짜 형식 변환 (YYYY-MM-DD → YYYY.MM.DD)
           FORMATTED_DATE=$(echo "$CURRENT_DATE" | tr -d '"' | sed 's/-/./g')
 
-          # PR 설명을 불릿 포인트로 변환 (특수 문자 처리 개선)
-          # 구분자를 줄바꿈으로 분리
-          echo "$PR_CONTENT" > pr_content.txt
-          cat pr_content.txt | sed 's/\. /\.\n/g' | sed 's/, /,\n/g' > formatted_content.txt
-
-          # 각 줄에 불릿 포인트 추가
-          cat formatted_content.txt | grep -v '^$' | sed 's/^/- /' > bullet_points.txt
+          # PR 설명 그대로 사용 (불릿 포인트 추가 없이)
+          echo "$PR_CONTENT" > bullet_points.txt
 
           # jq를 사용하여 안전하게 JSON 생성 (이스케이프 자동 처리)
           SLACK_PAYLOAD=$(jq -n \
