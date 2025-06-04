@@ -45,11 +45,13 @@ jobs:
           CURRENT_DATE: ${{ env.CURRENT_DATE }}
         run: |
           # 현재 날짜 형식 변환 (YYYY-MM-DD → YYYY.MM.DD)
-          FORMATTED_DATE=$(echo "$CURRENT_DATE" | sed 's/-/./g')
+          FORMATTED_DATE=$(echo "$CURRENT_DATE" | tr -d '"' | sed 's/-/./g')
 
-          # PR 설명 내용을 불릿 포인트로 변환
-          BULLET_POINTS=$(echo "$PR_CONTENT" | sed 's/- /\n- /g' | sed 's/\. /\.\n- /g')
-          FORMATTED_CONTENT=$(echo "- $BULLET_POINTS" | sed 's/- - /- /g')
+          # PR 설명 변환
+          BULLET_LIST=$(echo "$PR_CONTENT" | sed 's/\\n/\n/g' | sed '/^\s*$/d' | sed -e 's/^[[:space:]]*/- /' | sed -e 's/^- - /- /')
+
+          # 불필요한 빈 불릿 포인트 제거
+          FORMATTED_CONTENT=$(echo "$BULLET_LIST" | grep -v '^- $')
 
           # 단순화된 Slack 메시지 페이로드
           SLACK_PAYLOAD=$(jq -n \
@@ -58,7 +60,7 @@ jobs:
             '{
               attachments: [
                 {
-                  color: "#36a64f",
+                  color: "#36a64f", 
                   title: $title,
                   text: $content,
                   mrkdwn_in: ["text"]
@@ -66,6 +68,11 @@ jobs:
               ]
             }'
           )
+
+          # 디버깅 (문제 해결에 도움이 됨)
+          echo "날짜: $FORMATTED_DATE"
+          echo "내용:"
+          echo "$FORMATTED_CONTENT"
 
           # 전송
           curl -X POST -H 'Content-Type: application/json' --data "$SLACK_PAYLOAD" "$SLACK_WEBHOOK_URL"
